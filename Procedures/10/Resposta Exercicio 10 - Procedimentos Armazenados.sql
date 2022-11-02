@@ -1,0 +1,142 @@
+/* Exercício 10 - Procedimentos Armazenados */
+
+1. Criar um procedimento SP_CLASSIFICA_CLIENTE para classificar um Cliente como
+   PARCEIRO ou ALVO. O procedimento deve receber como parâmetros de entrada a data
+   de inclusão do Cliente e a quantidade de produtos que um Cliente já comprou. O
+   procedimento deve apresentar um parâmetro de saída informando se o Cliente é
+   PARCEIRO ou ALVO. O cliente será classificado de acordo com a seguinte regra:
+  
+   Se a data de inclusão do Cliente é maior ou igual a ‘01/03/2018’ (de 01/03/2018 em
+   diante) ou a Quantidade de Produtos já comprados pelo Cliente é maior que 50
+   O Cliente é PARCEIRO
+   Caso Contrário o Cliente é ALVO.
+   
+   
+CREATE OR ALTER PROCEDURE SP_CLASSIFICA_CLIENTE (@DT_INCLUSAO DATETIME, @QTD_PRODUTOS INT,
+                                                 @CLASSIFICACAO VARCHAR(10) OUTPUT)
+AS
+BEGIN 
+   IF @DT_INCLUSAO >= '20180301' OR @QTD_PRODUTOS > 50
+      SET @CLASSIFICACAO = 'PARCEIRO'
+   ELSE 
+      SET @CLASSIFICACAO = 'ALVO'
+END
+
+-- TESTE PROCEDIMENTO
+
+DECLARE @CLASSIFICACAO VARCHAR(10)
+
+-- PARCEIRO
+EXEC SP_CLASSIFICA_CLIENTE '20180301', 30, @CLASSIFICACAO OUTPUT 
+PRINT @CLASSIFICACAO
+
+-- PARCEIRO
+EXEC SP_CLASSIFICA_CLIENTE '20190301', 30, @CLASSIFICACAO OUTPUT 
+PRINT @CLASSIFICACAO
+
+-- PARCEIRO
+EXEC SP_CLASSIFICA_CLIENTE '20170301', 51, @CLASSIFICACAO OUTPUT 
+PRINT @CLASSIFICACAO
+
+-- ALVO
+EXEC SP_CLASSIFICA_CLIENTE '20170301', 50, @CLASSIFICACAO OUTPUT 
+PRINT @CLASSIFICACAO
+
+
+-- ALVO
+EXEC SP_CLASSIFICA_CLIENTE '20160301', 30, @CLASSIFICACAO OUTPUT 
+PRINT @CLASSIFICACAO
+
+
+2. Criar um procedimento SP_COPIA_CLENTE utilizando cursores para varrer a tabela
+   TB_CLIENTE e, utilizando o procedimento desenvolvido da questão 1 e as informações
+   contidas na tabela TB_VENDAS, copiar as informações de um cliente para a tabela
+   TB_CLIENTE_ALVO ou para a tabela TB_CLIENTE_PARCEIRO de acordo com sua
+   classificação. A classificação do Cliente deve ser dada necessariamente pelo procedimento
+   da questão 1.
+   
+CREATE OR ALTER PROCEDURE SP_COPIA_CLIENTE 
+AS 
+BEGIN 
+   DECLARE @CD_CLIENTE INT,
+           @NM_CLIENTE VARCHAR(60),
+           @CPF INT,
+           @DT_INCLUSAO DATETIME,
+           @QTD_PRODUTOS INT,
+           @CLASSIFICACAO VARCHAR(10)
+	
+   DECLARE C_CLIENTE CURSOR FOR 
+   SELECT C.CD_CLIENTE, C.NM_CLIENTE, C.CPF, C.DT_INCLUSAO,
+          ISNULL(SUM(V.QUANTIDADE),0) QTD_PRODUTOS
+   FROM TB_CLIENTE C LEFT JOIN TB_VENDAS V
+   ON (C.CD_CLIENTE = V.CD_CLIENTE)
+   GROUP BY C.CD_CLIENTE, C.NM_CLIENTE, C.CPF, C.DT_INCLUSAO
+   
+   OPEN C_CLIENTE
+   FETCH C_CLIENTE INTO @CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO, @QTD_PRODUTOS
+   WHILE (@@FETCH_STATUS = 0)
+     BEGIN
+	     EXEC SP_CLASSIFICA_CLIENTE @DT_INCLUSAO, @QTD_PRODUTOS, @CLASSIFICACAO OUTPUT 
+	     IF @CLASSIFICACAO = 'PARCEIRO'
+	        INSERT INTO TB_CLIENTE_PARCEIRO VALUES(@CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO)
+	     ELSE
+	        INSERT INTO TB_CLIENTE_ALVO VALUES(@CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO)
+	     FETCH C_CLIENTE INTO @CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO, @QTD_PRODUTOS
+     END
+   CLOSE C_CLIENTE
+   DEALLOCATE C_CLIENTE
+END
+
+
+-------------------------------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE SP_COPIA_CLIENTE 
+AS 
+BEGIN 
+   DECLARE @CD_CLIENTE INT,
+           @NM_CLIENTE VARCHAR(60),
+           @CPF INT,
+           @DT_INCLUSAO DATETIME,
+           @QTD_PRODUTOS INT,
+           @CLASSIFICACAO VARCHAR(10)
+	
+   DECLARE C_CLIENTE CURSOR FOR 
+   SELECT CD_CLIENTE, NM_CLIENTE, CPF, DT_INCLUSAO
+   FROM TB_CLIENTE  
+   
+   OPEN C_CLIENTE
+   FETCH C_CLIENTE INTO @CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO
+   WHILE (@@FETCH_STATUS = 0)
+     BEGIN
+	     SET @QTD_PRODUTOS = (SELECT ISNULL(SUM(QUANTIDADE),0) FROM TB_VENDAS 
+	                          WHERE CD_CLIENTE = @CD_CLIENTE)
+	     
+	     EXEC SP_CLASSIFICA_CLIENTE @DT_INCLUSAO, @QTD_PRODUTOS, @CLASSIFICACAO OUTPUT 
+	     IF @CLASSIFICACAO = 'PARCEIRO'
+	        INSERT INTO TB_CLIENTE_PARCEIRO VALUES(@CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO)
+	     ELSE
+	        INSERT INTO TB_CLIENTE_ALVO VALUES(@CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO)
+	     FETCH C_CLIENTE INTO @CD_CLIENTE, @NM_CLIENTE, @CPF, @DT_INCLUSAO, @QTD_PRODUTOS
+     END
+   CLOSE C_CLIENTE
+   DEALLOCATE C_CLIENTE
+END
+
+
+
+------------
+
+TESTE DO PROCEDIMENTO
+
+
+SELECT * FROM TB_CLIENTE 
+SELECT * FROM TB_VENDAS 
+
+SELECT * FROM TB_CLIENTE_PARCEIRO
+SELECT * FROM TB_CLIENTE_ALVO
+
+EXEC SP_COPIA_CLIENTE
+
+
+
+
